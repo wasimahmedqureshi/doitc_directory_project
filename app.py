@@ -9,15 +9,18 @@ app = Flask(__name__)
 app.secret_key = "super_secret_key"
 app.permanent_session_lifetime = timedelta(minutes=10)
 
-DATABASE = "database.db"
+# IMPORTANT: Render compatible path
+DATABASE = "/tmp/database.db"
 
-# ---------------- DATABASE INIT ----------------
+def get_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
-    conn = sqlite3.connect(DATABASE)
+    conn = get_connection()
     c = conn.cursor()
 
-    # Users Table
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,10 +28,6 @@ def init_db():
     )
     """)
 
-    # Default Mobile (Testing)
-    c.execute("INSERT OR IGNORE INTO users (mobile) VALUES (?)", ("9999999999",))
-
-    # Employees Table
     c.execute("""
     CREATE TABLE IF NOT EXISTS employees (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,20 +40,22 @@ def init_db():
     )
     """)
 
+    # Default testing mobile
+    c.execute("INSERT OR IGNORE INTO users (mobile) VALUES (?)", ("9999999999",))
+
     conn.commit()
     conn.close()
 
-# Ensure DB initializes on startup (IMPORTANT for Render)
-init_db()
-
-# ---------------- LOGIN ----------------
+# Force DB init at startup (Gunicorn compatible)
+with app.app_context():
+    init_db()
 
 @app.route("/", methods=["GET","POST"])
 def login():
     if request.method == "POST":
         mobile = request.form["mobile"]
 
-        conn = sqlite3.connect(DATABASE)
+        conn = get_connection()
         c = conn.cursor()
         c.execute("SELECT * FROM users WHERE mobile=?", (mobile,))
         user = c.fetchone()
@@ -64,14 +65,12 @@ def login():
             otp = random.randint(100000,999999)
             session["otp"] = str(otp)
             session["mobile"] = mobile
-            print("OTP:", otp)  # Check in Render Logs
+            print("OTP:", otp)
             return redirect("/verify")
         else:
             return "Unauthorized Mobile Number"
 
     return render_template("login.html")
-
-# ---------------- OTP VERIFY ----------------
 
 @app.route("/verify", methods=["GET","POST"])
 def verify():
@@ -86,15 +85,12 @@ def verify():
 
     return render_template("verify.html")
 
-# ---------------- DASHBOARD ----------------
-
 @app.route("/dashboard", methods=["GET","POST"])
 def dashboard():
     if "user" not in session:
         return redirect("/")
 
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     c = conn.cursor()
 
     if request.method == "POST":
@@ -111,23 +107,19 @@ def dashboard():
 
     return render_template("dashboard.html", data=data)
 
-# ---------------- EXPORT ----------------
-
 @app.route("/export")
 def export():
     if "user" not in session:
         return redirect("/")
 
-    conn = sqlite3.connect(DATABASE)
+    conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM employees", conn)
     conn.close()
 
-    file_path = "employees.xlsx"
+    file_path = "/tmp/employees.xlsx"
     df.to_excel(file_path, index=False)
 
     return send_file(file_path, as_attachment=True)
-
-# ---------------- RUN ----------------
 
 if __name__ == "__main__":
     app.run()
