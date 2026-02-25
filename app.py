@@ -3,13 +3,11 @@ import sqlite3
 import random
 import pandas as pd
 from datetime import timedelta
-import os
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key"
-app.permanent_session_lifetime = timedelta(minutes=10)
+app.permanent_session_lifetime = timedelta(minutes=15)
 
-# IMPORTANT: Render compatible path
 DATABASE = "/tmp/database.db"
 
 def get_connection():
@@ -21,6 +19,7 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
 
+    # Users table
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +27,16 @@ def init_db():
     )
     """)
 
+    # Admin table
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS admin (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT
+    )
+    """)
+
+    # Employees table
     c.execute("""
     CREATE TABLE IF NOT EXISTS employees (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,15 +49,71 @@ def init_db():
     )
     """)
 
-    # Default testing mobile
-    c.execute("INSERT OR IGNORE INTO users (mobile) VALUES (?)", ("9999999999",))
+    # Default Admin
+    c.execute("INSERT OR IGNORE INTO admin (username,password) VALUES (?,?)",
+              ("admin","admin123"))
 
     conn.commit()
     conn.close()
 
-# Force DB init at startup (Gunicorn compatible)
 with app.app_context():
     init_db()
+
+# ================= ADMIN LOGIN =================
+
+@app.route("/admin", methods=["GET","POST"])
+def admin_login():
+    if request.method == "POST":
+        username = request.form["username"]
+        password = request.form["password"]
+
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT * FROM admin WHERE username=? AND password=?", (username,password))
+        admin = c.fetchone()
+        conn.close()
+
+        if admin:
+            session["admin"] = username
+            return redirect("/admin_dashboard")
+        else:
+            return "Invalid Admin Credentials"
+
+    return render_template("admin_login.html")
+
+@app.route("/admin_dashboard", methods=["GET","POST"])
+def admin_dashboard():
+    if "admin" not in session:
+        return redirect("/admin")
+
+    conn = get_connection()
+    c = conn.cursor()
+
+    if request.method == "POST":
+        mobile = request.form["mobile"]
+        c.execute("INSERT OR IGNORE INTO users (mobile) VALUES (?)", (mobile,))
+        conn.commit()
+
+    c.execute("SELECT * FROM users")
+    users = c.fetchall()
+    conn.close()
+
+    return render_template("admin_dashboard.html", users=users)
+
+@app.route("/delete/<int:user_id>")
+def delete_user(user_id):
+    if "admin" not in session:
+        return redirect("/admin")
+
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    return redirect("/admin_dashboard")
+
+# ================= USER LOGIN =================
 
 @app.route("/", methods=["GET","POST"])
 def login():
@@ -85,41 +150,14 @@ def verify():
 
     return render_template("verify.html")
 
-@app.route("/dashboard", methods=["GET","POST"])
+@app.route("/dashboard")
 def dashboard():
     if "user" not in session:
         return redirect("/")
 
-    conn = get_connection()
-    c = conn.cursor()
+    return "User Login Successful ✅"
 
-    if request.method == "POST":
-        search = request.form["search"]
-        c.execute("""
-        SELECT * FROM employees
-        WHERE name LIKE ? OR email LIKE ? OR contact LIKE ?
-        """, ('%'+search+'%','%'+search+'%','%'+search+'%'))
-    else:
-        c.execute("SELECT * FROM employees LIMIT 50")
-
-    data = c.fetchall()
-    conn.close()
-
-    return render_template("dashboard.html", data=data)
-
-@app.route("/export")
-def export():
-    if "user" not in session:
-        return redirect("/")
-
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM employees", conn)
-    conn.close()
-
-    file_path = "/tmp/employees.xlsx"
-    df.to_excel(file_path, index=False)
-
-    return send_file(file_path, as_attachment=True)
+# ================= RUN =================
 
 if __name__ == "__main__":
     app.run()
