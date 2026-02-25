@@ -1,0 +1,24 @@
+<h2>Admin Panel</h2>
+
+<form method="POST">
+<input name="mobile" placeholder="Add Mobile Number" required>
+<button type="submit">Add</button>
+</form>
+
+<h3>Registered Users</h3>
+
+<table border="1">
+<tr>
+<th>ID</th>
+<th>Mobile</th>
+<th>Action</th>
+</tr>
+
+{% for user in users %}
+<tr>
+<td>{{ user['id'] }}</td>
+<td>{{ user['mobile'] }}</td>
+<td><a href="/delete/{{ user['id'] }}">Delete</a></td>
+</tr>
+{% endfor %}
+</table>
