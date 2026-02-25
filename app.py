@@ -1,9 +1,9 @@
-
 from flask import Flask, render_template, request, redirect, session, send_file
 import sqlite3
 import random
 import pandas as pd
 from datetime import timedelta
+import os
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key"
@@ -11,10 +11,13 @@ app.permanent_session_lifetime = timedelta(minutes=10)
 
 DATABASE = "database.db"
 
+# ---------------- DATABASE INIT ----------------
+
 def init_db():
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
 
+    # Users Table
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,6 +25,10 @@ def init_db():
     )
     """)
 
+    # Default Mobile (Testing)
+    c.execute("INSERT OR IGNORE INTO users (mobile) VALUES (?)", ("9999999999",))
+
+    # Employees Table
     c.execute("""
     CREATE TABLE IF NOT EXISTS employees (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,6 +43,11 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+# Ensure DB initializes on startup (IMPORTANT for Render)
+init_db()
+
+# ---------------- LOGIN ----------------
 
 @app.route("/", methods=["GET","POST"])
 def login():
@@ -52,23 +64,29 @@ def login():
             otp = random.randint(100000,999999)
             session["otp"] = str(otp)
             session["mobile"] = mobile
-            print("OTP:", otp)
+            print("OTP:", otp)  # Check in Render Logs
             return redirect("/verify")
         else:
             return "Unauthorized Mobile Number"
 
     return render_template("login.html")
 
+# ---------------- OTP VERIFY ----------------
+
 @app.route("/verify", methods=["GET","POST"])
 def verify():
     if request.method == "POST":
         entered_otp = request.form["otp"]
+
         if entered_otp == session.get("otp"):
             session["user"] = session.get("mobile")
             return redirect("/dashboard")
         else:
             return "Invalid OTP"
+
     return render_template("verify.html")
+
+# ---------------- DASHBOARD ----------------
 
 @app.route("/dashboard", methods=["GET","POST"])
 def dashboard():
@@ -93,6 +111,8 @@ def dashboard():
 
     return render_template("dashboard.html", data=data)
 
+# ---------------- EXPORT ----------------
+
 @app.route("/export")
 def export():
     if "user" not in session:
@@ -104,8 +124,10 @@ def export():
 
     file_path = "employees.xlsx"
     df.to_excel(file_path, index=False)
+
     return send_file(file_path, as_attachment=True)
 
+# ---------------- RUN ----------------
+
 if __name__ == "__main__":
-    init_db()
-    app.run(debug=True)
+    app.run()
