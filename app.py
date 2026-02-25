@@ -1,14 +1,14 @@
-from flask import Flask, render_template, request, redirect, session, send_file
+from flask import Flask, render_template, request, redirect, session
 import sqlite3
 import random
-import pandas as pd
 from datetime import timedelta
+import os
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key"
 app.permanent_session_lifetime = timedelta(minutes=15)
 
-DATABASE = "/tmp/database.db"
+DATABASE = "database.db"
 
 def get_connection():
     conn = sqlite3.connect(DATABASE)
@@ -49,14 +49,15 @@ def init_db():
     )
     """)
 
-    # Default Admin
+    # Default Admin (only first time)
     c.execute("INSERT OR IGNORE INTO admin (username,password) VALUES (?,?)",
               ("admin","admin123"))
 
     conn.commit()
     conn.close()
 
-with app.app_context():
+# Create DB only if not exists
+if not os.path.exists(DATABASE):
     init_db()
 
 # ================= ADMIN LOGIN =================
@@ -156,8 +157,6 @@ def dashboard():
         return redirect("/")
 
     return "User Login Successful ✅"
-
-# ================= RUN =================
 
 if __name__ == "__main__":
     app.run()
