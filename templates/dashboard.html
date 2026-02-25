@@ -1,0 +1,39 @@
+
+<!DOCTYPE html>
+<html>
+<head><title>Dashboard</title></head>
+<body>
+<h2>Employee Directory</h2>
+
+<form method="POST">
+    <input type="text" name="search" placeholder="Search by Name/Email/Mobile">
+    <button type="submit">Search</button>
+</form>
+
+<br>
+<a href="/export">Download Excel</a>
+<br><br>
+
+<table border="1">
+<tr>
+    <th>Name</th>
+    <th>Designation</th>
+    <th>Office</th>
+    <th>District</th>
+    <th>Contact</th>
+    <th>Email</th>
+</tr>
+{% for row in data %}
+<tr>
+    <td>{{ row['name'] }}</td>
+    <td>{{ row['designation'] }}</td>
+    <td>{{ row['office'] }}</td>
+    <td>{{ row['district'] }}</td>
+    <td>{{ row['contact'] }}</td>
+    <td>{{ row['email'] }}</td>
+</tr>
+{% endfor %}
+</table>
+
+</body>
+</html>
