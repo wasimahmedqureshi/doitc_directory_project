@@ -6,22 +6,25 @@ from flask import Flask, render_template, request, redirect, session
 app = Flask(__name__)
 app.secret_key = "supersecretkey"
 
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax"
+)
+
 DATABASE = "database.db"
 
 
-# ------------------ DATABASE CONNECTION ------------------
 def get_connection():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
 
 
-# ------------------ CREATE TABLES ------------------
 def create_tables():
     conn = get_connection()
     c = conn.cursor()
 
-    # Users Table
     c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +39,6 @@ def create_tables():
 create_tables()
 
 
-# ------------------ LOGIN ------------------
 @app.route("/", methods=["GET", "POST"])
 def login():
 
@@ -46,16 +48,13 @@ def login():
         conn = get_connection()
         c = conn.cursor()
 
-        # check if any user exists
         c.execute("SELECT COUNT(*) FROM users")
         total_users = c.fetchone()[0]
 
-        # if no user exists, first mobile becomes admin automatically
         if total_users == 0:
             c.execute("INSERT INTO users (mobile) VALUES (?)", (mobile,))
             conn.commit()
 
-        # now check if mobile exists
         c.execute("SELECT * FROM users WHERE mobile=?", (mobile,))
         user = c.fetchone()
         conn.close()
@@ -64,7 +63,7 @@ def login():
             otp = random.randint(100000, 999999)
             session["otp"] = str(otp)
             session["mobile"] = mobile
-            print("OTP:", otp)  # OTP will show in Render logs
+            print("OTP:", otp)
             return redirect("/verify")
         else:
             return "Unauthorized Mobile Number"
@@ -72,7 +71,6 @@ def login():
     return render_template("login.html")
 
 
-# ------------------ OTP VERIFY ------------------
 @app.route("/verify", methods=["GET", "POST"])
 def verify():
 
@@ -83,8 +81,8 @@ def verify():
         entered_otp = request.form["otp"]
 
         if entered_otp == session.get("otp"):
-            session["user"] = session.get("mobile")
             session.pop("otp", None)
+            session["user"] = session.get("mobile")
             return redirect("/dashboard")
         else:
             return "Invalid OTP"
@@ -92,7 +90,6 @@ def verify():
     return render_template("verify.html")
 
 
-# ------------------ DASHBOARD ------------------
 @app.route("/dashboard")
 def dashboard():
 
@@ -108,7 +105,6 @@ def dashboard():
     """
 
 
-# ------------------ ADMIN PANEL ------------------
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
 
@@ -147,13 +143,11 @@ def admin():
     return html
 
 
-# ------------------ LOGOUT ------------------
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/")
 
 
-# ------------------ RUN ------------------
 if __name__ == "__main__":
     app.run(debug=True)
