@@ -1,16 +1,9 @@
-import os
 import sqlite3
 import random
 from flask import Flask, render_template, request, redirect, session
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"
-
-app.config.update(
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax"
-)
 
 DATABASE = "database.db"
 
@@ -29,6 +22,13 @@ def create_tables():
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         mobile TEXT UNIQUE
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS otp_store (
+        mobile TEXT,
+        otp TEXT
     )
     """)
 
@@ -57,15 +57,20 @@ def login():
 
         c.execute("SELECT * FROM users WHERE mobile=?", (mobile,))
         user = c.fetchone()
-        conn.close()
 
         if user:
-            otp = random.randint(100000, 999999)
-            session["otp"] = str(otp)
-            session["mobile"] = mobile
+            otp = str(random.randint(100000, 999999))
+
+            c.execute("DELETE FROM otp_store WHERE mobile=?", (mobile,))
+            c.execute("INSERT INTO otp_store (mobile, otp) VALUES (?,?)", (mobile, otp))
+            conn.commit()
+            conn.close()
+
             print("OTP:", otp)
+            session["mobile"] = mobile
             return redirect("/verify")
         else:
+            conn.close()
             return "Unauthorized Mobile Number"
 
     return render_template("login.html")
@@ -74,17 +79,27 @@ def login():
 @app.route("/verify", methods=["GET", "POST"])
 def verify():
 
-    if "otp" not in session:
+    if "mobile" not in session:
         return redirect("/")
 
     if request.method == "POST":
         entered_otp = request.form["otp"]
+        mobile = session["mobile"]
 
-        if entered_otp == session.get("otp"):
-            session.pop("otp", None)
-            session["user"] = session.get("mobile")
+        conn = get_connection()
+        c = conn.cursor()
+
+        c.execute("SELECT otp FROM otp_store WHERE mobile=?", (mobile,))
+        record = c.fetchone()
+
+        if record and entered_otp == record["otp"]:
+            session["user"] = mobile
+            c.execute("DELETE FROM otp_store WHERE mobile=?", (mobile,))
+            conn.commit()
+            conn.close()
             return redirect("/dashboard")
         else:
+            conn.close()
             return "Invalid OTP"
 
     return render_template("verify.html")
@@ -147,7 +162,3 @@ def admin():
 def logout():
     session.clear()
     return redirect("/")
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
