@@ -1,22 +1,29 @@
-from flask import Flask, render_template, request, redirect, session, url_for
-import sqlite3
+from flask import Flask, render_template, request, redirect, session
 import random
 import os
+import psycopg2
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"
+app.secret_key = os.environ.get("SECRET_KEY", "fallbackkey")
 
-DATABASE = "database.db"
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  mobile TEXT UNIQUE)''')
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            mobile VARCHAR(15) UNIQUE NOT NULL
+        );
+    """)
 
     conn.commit()
+    cur.close()
     conn.close()
 
 init_db()
@@ -26,10 +33,11 @@ def login():
     if request.method == "POST":
         mobile = request.form["mobile"]
 
-        conn = sqlite3.connect(DATABASE)
-        c = conn.cursor()
-        c.execute("SELECT * FROM users WHERE mobile=?", (mobile,))
-        user = c.fetchone()
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE mobile=%s;", (mobile,))
+        user = cur.fetchone()
+        cur.close()
         conn.close()
 
         if user:
@@ -43,42 +51,41 @@ def login():
 
     return render_template("login.html")
 
-
 @app.route("/verify", methods=["GET", "POST"])
 def verify():
     if request.method == "POST":
-        entered_otp = request.form["otp"]
+        entered = request.form["otp"]
 
-        if entered_otp == session.get("otp"):
+        if entered == session.get("otp"):
             return redirect("/admin")
         else:
             return "Invalid OTP"
 
     return render_template("verify.html")
 
-
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     if request.method == "POST":
-        new_mobile = request.form["mobile"]
+        mobile = request.form["mobile"]
 
-        conn = sqlite3.connect(DATABASE)
-        c = conn.cursor()
+        conn = get_connection()
+        cur = conn.cursor()
         try:
-            c.execute("INSERT INTO users (mobile) VALUES (?)", (new_mobile,))
+            cur.execute("INSERT INTO users (mobile) VALUES (%s);", (mobile,))
             conn.commit()
         except:
             pass
+        cur.close()
         conn.close()
 
-    conn = sqlite3.connect(DATABASE)
-    c = conn.cursor()
-    c.execute("SELECT mobile FROM users")
-    mobiles = c.fetchall()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT mobile FROM users;")
+    mobiles = cur.fetchall()
+    cur.close()
     conn.close()
 
     return render_template("admin.html", mobiles=mobiles)
 
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
